@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Check Financeiro</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+:root{
+  --bg:#f4f6f8;
+  --card:#ffffff;
+  --text:#000000;
+  --primary:#2e7d32;
+}
+.dark{
+  --bg:#121212;
+  --card:#1e1e1e;
+  --text:#ffffff;
+}
+body{
+  margin:0;
+  font-family:Arial, sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  padding:16px;
+}
+h1,h2{text-align:center}
+.card{
+  background:var(--card);
+  padding:16px;
+  border-radius:8px;
+  margin-bottom:16px;
+}
+input,select,button{
+  width:100%;
+  padding:10px;
+  margin-top:6px;
+}
+button{
+  background:var(--primary);
+  color:#fff;
+  border:none;
+  border-radius:4px;
+}
+table{width:100%;border-collapse:collapse}
+td,th{border-bottom:1px solid #ccc;padding:6px}
+.total{text-align:right;font-weight:bold;font-size:18px}
+</style>
+</head>
+
+<body>
+
+<!-- ONBOARDING -->
+<div id="onboarding" style="position:fixed;inset:0;background:#2e7d32;color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;z-index:9999;padding:24px">
+  <h1>Check Financeiro</h1>
+  <p id="onbText">Controle seus gastos de forma simples e segura.</p>
+  <button onclick="nextOnb()">Próximo</button>
+</div>
+
+<h1>Check Financeiro</h1>
+<button onclick="toggleDark()">🌙 Modo Escuro</button>
+
+<div class="card">
+<h2>Adicionar Despesa</h2>
+<input id="descricao" placeholder="Descrição">
+<input id="valor" type="number" step="0.01" placeholder="Valor">
+<select id="categoria">
+  <option>Alimentação</option>
+  <option>Transporte</option>
+  <option>Moradia</option>
+  <option>Lazer</option>
+  <option>Outros</option>
+</select>
+<input id="mes" type="month">
+<button onclick="adicionar()">Adicionar</button>
+<button onclick="voz()">🎤 Por Voz</button>
+</div>
+
+<div class="card">
+<h2>Filtros</h2>
+<select id="filtroCat" onchange="renderizar()">
+  <option value="">Todas categorias</option>
+  <option>Alimentação</option>
+  <option>Transporte</option>
+  <option>Moradia</option>
+  <option>Lazer</option>
+  <option>Outros</option>
+</select>
+<input id="filtroMes" type="month" onchange="renderizar()">
+</div>
+
+<div class="card">
+<h2>Despesas</h2>
+<table>
+<thead>
+<tr><th>Desc</th><th>Cat</th><th>Mês</th><th>R$</th><th>Ações</th></tr>
+</thead>
+<tbody id="lista"></tbody>
+</table>
+<div class="total" id="total"></div>
+</div>
+
+<div class="card">
+<h2>Gráfico</h2>
+<canvas id="grafico"></canvas>
+</div>
+
+<div class="card">
+<h2>Exportar</h2>
+<button onclick="exportarCSV()">Excel</button>
+<button onclick="window.print()">PDF</button>
+</div>
+
+<script>
+let despesas = JSON.parse(localStorage.getItem('despesas'))||[];
+let historico = JSON.parse(localStorage.getItem('historico'))||[];
+let chart;
+
+function salvar(){
+  localStorage.setItem('despesas',JSON.stringify(despesas));
+  localStorage.setItem('historico',JSON.stringify(historico));
+}
+
+function adicionar(){
+  if(!descricao.value||!valor.value||!mes.value) return alert('Preencha tudo');
+  despesas.push({descricao:descricao.value,valor:+valor.value,categoria:categoria.value,mes:mes.value});
+  salvar(); renderizar();
+  descricao.value='';valor.value='';
+}
+
+function editar(i){
+  let d=despesas[i];
+  descricao.value=d.descricao;
+  valor.value=d.valor;
+  categoria.value=d.categoria;
+  mes.value=d.mes;
+  despesas.splice(i,1);
+  historico.push({acao:'Edição',d,data:new Date().toLocaleString()});
+  salvar();
+}
+
+function excluir(i){
+  if(!confirm('Confirmar exclusão?')) return;
+  historico.push({acao:'Exclusão',despesa:despesas[i],data:new Date().toLocaleString()});
+  despesas.splice(i,1);
+  salvar(); renderizar();
+}
+
+function renderizar(){
+  lista.innerHTML='';
+  let soma=0;
+  let fc=filtroCat.value, fm=filtroMes.value;
+  let dados=despesas.filter(d=>(!fc||d.categoria==fc)&&(!fm||d.mes==fm));
+  dados.forEach((d,i)=>{
+    soma+=d.valor;
+    lista.innerHTML+=`<tr>
+<td>${d.descricao}</td>
+<td>${d.categoria}</td>
+<td>${d.mes}</td>
+<td>${d.valor.toFixed(2)}</td>
+<td>
+<button onclick="editar(${i})">✏️</button>
+<button onclick="excluir(${i})">🗑️</button>
+</td></tr>`;
+  });
+  total.innerText=`Total: R$ ${soma.toFixed(2)}`;
+  grafico(dados);
+}
+
+function grafico(d){
+  let c={};
+  d.forEach(x=>c[x.categoria]=(c[x.categoria]||0)+x.valor);
+  if(chart) chart.destroy();
+  chart=new Chart(graficoEl,{type:'pie',data:{labels:Object.keys(c),datasets:[{data:Object.values(c)}]}});
+}
+
+function exportarCSV(){
+  let csv='Desc,Cat,Mês,Valor\n';
+  despesas.forEach(d=>csv+=`${d.descricao},${d.categoria},${d.mes},${d.valor}\n`);
+  let a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv]));
+  a.download='despesas.csv';
+  a.click();
+}
+
+function voz(){
+  let r=new webkitSpeechRecognition();
+  r.lang='pt-BR';
+  r.onresult=e=>descricao.value=e.results[0][0].transcript;
+  r.start();
+}
+
+function toggleDark(){
+  document.body.classList.toggle('dark');
+  localStorage.setItem('dark',document.body.classList.contains('dark'));
+}
+if(localStorage.getItem('dark')==='true') document.body.classList.add('dark');
+
+let onb=0;
+let textos=[
+'Controle seus gastos de forma simples.',
+'Adicione despesas por voz ou texto.',
+'Veja gráficos e totais.',
+'Edite e exclua com segurança.',
+'Use modo escuro e exporte dados.'
+];
+function nextOnb(){
+  onb++;
+  if(onb<textos.length) onbText.innerText=textos[onb];
+  else{
+    onboarding.style.display='none';
+    localStorage.setItem('onb','ok');
+  }
+}
+if(localStorage.getItem('onb')==='ok') onboarding.style.display='none';
+
+const graficoEl=document.getElementById('grafico');
+renderizar();
+</script>
+
+</body>
+</html>
